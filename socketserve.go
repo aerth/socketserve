@@ -63,7 +63,7 @@ func main() {
 	go func() {
 		sig := <-sigc
 		if server != nil {
-			println("got signal:", sig.Signal)
+			println("got signal:", sig.String())
 			server.close()
 		}
 		os.Exit(111)
