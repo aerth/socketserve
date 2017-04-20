@@ -26,7 +26,6 @@
 package main
 
 import (
-	"flag"
 	"net"
 	"net/http"
 	"os"
@@ -36,31 +35,29 @@ import (
 	"time"
 )
 
-var (
-	socket = flag.String("s", os.Getenv("SOCKET")+"web.sock", "location of network socket to listen on")
-)
 
 func usage() {
 	println("usage:")
-	println("\tsockserve [-flag] <directory>")
-	println("flags:")
-	flag.PrintDefaults()
-}
-
-func init() {
-	flag.Usage = usage
+	println("\tenv SOCKET=/path/to/socket sockserve <public-html>")
 }
 
 func main() {
 	println("socketserve v98")
-	flag.Parse()
-	if len(flag.Args()) != 1 {
+	if len(os.Args) != 2 {
 		usage()
 		os.Exit(111)
 	}
-	dir := flag.Args()[0]
-	server := New(dir)
-
+	pubdir := os.Args[1]
+	if pubdir == "" {
+		usage()
+		os.Exit(111)
+	}
+	server := New(pubdir)
+	server.socketpath = os.Getenv("SOCKET")
+	if server.socketpath == "" {
+		usage()
+		os.Exit(111)
+	}
 	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc)
 	go func() {
@@ -75,9 +72,9 @@ func main() {
 	go func() {
 		<-time.After(time.Second)
 		wd, _ := os.Getwd()
-		println("listening on unix socket:", filepath.Join(wd, *socket))
+		println("listening on unix socket:", filepath.Join(wd, server.socketpath))
 	}()
-	server.Serve(*socket)
+	server.Serve()
 
 }
 
@@ -104,11 +101,12 @@ func New(dir string) *Server {
 	return s
 }
 
-func (s Server) Serve(address string) {
-	defer os.Remove(address)
+func (s Server) Serve() {
+	defer os.Remove(s.socketpath)
+	
 ServeUnix:
-	// Look up address
-	socketAddress, err := net.ResolveUnixAddr("unix", address)
+	// Look up socket path
+	socketAddress, err := net.ResolveUnixAddr("unix", s.socketpath)
 	if err != nil {
 		println(err.Error())
 		return
@@ -116,7 +114,7 @@ ServeUnix:
 	ulistener, err := net.ListenUnix("unix", socketAddress)
 	if err != nil {
 		if strings.Contains(err.Error(), "already in use") {
-			os.Remove(address)
+			os.Remove(s.socketpath)
 			goto ServeUnix
 		}
 		println(err.Error())
